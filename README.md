@@ -189,7 +189,7 @@ amazonfireguard/
 
 ### 1. Clonar o repositório
 ```bash
-git clone https://github.com/seu-usuario/monitoramento-queimadas.git
+git clone https://github.com/LeviLucena/amazonfireguard.git
 cd monitoramento-queimadas
 ```
 
