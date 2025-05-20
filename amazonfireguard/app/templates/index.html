@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Monitoramento de Queimadas - Amazônia</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- CSS do markercluster -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+
+    h2 {
+      text-align: center;
+      padding: 1rem;
+      background-color: #f44336;
+      color: white;
+      margin: 0;
+    }
+
+    #map {
+      height: 90vh;
+      width: 100%;
+      cursor: grab;
+    }
+
+    .legend,
+    .ti4-legend {
+      background: white;
+      padding: 10px;
+      font-size: 14px;
+      border-radius: 5px;
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+      position: absolute;
+      z-index: 1000;
+    }
+
+    .legend {
+      bottom: 70px;
+      left: 10px;
+    }
+
+    .ti4-legend {
+      bottom: 40px;
+      right: 60px;
+    }
+
+    .center-button {
+      position: absolute;
+      top: 80px;
+      left: 10px;
+      z-index: 1000;
+      background: white;
+      border: 1px solid #ccc;
+      padding: 6px 10px;
+      cursor: pointer;
+      border-radius: 5px;
+      font-size: 13px;
+      box-shadow: 0 0 3px rgba(0, 0, 0, 0.2);
+      user-select: none;
+    }
+
+    #loading {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 1500;
+      background: white;
+      padding: 5px 10px;
+      border-radius: 3px;
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+      font-size: 14px;
+      display: none;
+      user-select: none;
+    }
+
+    #last-update {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: white;
+      padding: 5px 10px;
+      border-radius: 3px;
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+      font-size: 12px;
+      user-select: none;
+      z-index: 1000;
+    }
+
+    @media (max-width: 600px) {
+      #map {
+        height: 70vh;
+      }
+
+      .center-button {
+        padding: 10px 14px;
+        font-size: 18px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <h2>FIRMS - Sistema de Informações sobre Incêndios para Gestão de Recursos</h2>
+  <div id="map"></div>
+
+  <!-- Legenda de confiança -->
+  <div class="legend">
+    <strong>Legenda – Nível de Confiança:</strong><br />
+    🔴 Alta confiança<br />
+    🟠 Média (nominal)<br />
+    🟡 Baixa confiança<br />
+    ⚪ Desconhecida
+  </div>
+
+  <!-- Legenda de intensidade térmica -->
+  <div class="ti4-legend">
+    <strong>Intensidade Térmica (TI4):</strong><br />
+    300–330 K: fraco/reflexo<br />
+    330–360 K: moderado<br />
+    360+ K: intenso
+  </div>
+
+  <!-- Botão centralizar -->
+  <button class="center-button" onclick="centerMap()">🔄 Centralizar Mapa</button>
+
+  <!-- Indicador de carregamento -->
+  <div id="loading">⏳ Carregando dados...</div>
+
+  <!-- Última atualização -->
+  <div id="last-update">Última atualização: --</div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Script do markercluster -->
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+  <script>
+    const amazoniaCenter = [-3.4653, -62.2159];
+    const map = L.map('map', {
+      zoomControl: false
+    }).setView(amazoniaCenter, 5);
+
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+    L.control.scale().addTo(map);
+
+    // Definindo as camadas base (mapas)
+    const satellite = L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      {
+        maxZoom: 18,
+        attribution: 'Tiles © Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and others',
+      }
+    );
+
+    const openStreetMap = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap contributors',
+    });
+
+    const stamenToner = L.tileLayer('https://stamen-tiles.a.ssl.fastly.net/toner/{z}/{x}/{y}.png', {
+      maxZoom: 20,
+      attribution: 'Map tiles by Stamen Design, CC BY 3.0 — Map data © OpenStreetMap contributors',
+    });
+
+    // Adiciona a camada padrão
+    satellite.addTo(map);
+
+    // Objeto para o controle de camadas
+    const baseMaps = {
+      'Satélite (Esri)': satellite,
+      OpenStreetMap: openStreetMap,
+      'Toner (Stamen)': stamenToner,
+    };
+
+    // Adiciona controle para o usuário escolher o mapa base
+    L.control.layers(baseMaps, null, { position: 'topright' }).addTo(map);
+
+    // Função para centralizar no centro da Amazônia
+    function centerMap() {
+      map.setView(amazoniaCenter, 5);
+    }
+
+    function interpretConfidence(conf) {
+      if (conf === 'l') return 'Baixa';
+      if (conf === 'n') return 'Média (nominal)';
+      if (conf === 'h') return 'Alta';
+      if (!isNaN(conf)) return conf + '%';
+      return 'Desconhecida';
+    }
+
+    function getColorByConfidence(conf) {
+      if (conf === 'l') return 'yellow';
+      if (conf === 'n') return 'orange';
+      if (conf === 'h') return 'red';
+      if (!isNaN(conf)) {
+        const percent = parseFloat(conf);
+        if (percent < 30) return 'yellow';
+        if (percent < 70) return 'orange';
+        return 'red';
+      }
+      return 'white'; // desconhecida
+    }
+
+    function updateLastUpdate() {
+      const now = new Date();
+      const formatted = now.toLocaleString('pt-BR', { hour12: false });
+      document.getElementById('last-update').textContent = `Última atualização: ${formatted}`;
+    }
+
+    async function fetchFires() {
+      const loading = document.getElementById('loading');
+      loading.style.display = 'block';
+
+      try {
+        const response = await fetch('/api/fires');
+        const data = await response.json();
+
+        if (window.firesLayer) {
+          window.firesLayer.clearLayers();
+          window.firesLayer = null;
+        }
+
+        // Usando marker cluster para agrupar muitos pontos
+        const markersCluster = L.markerClusterGroup();
+
+        data.forEach(fire => {
+          const marker = L.circleMarker([fire.latitude, fire.longitude], {
+            radius: 5,
+            fillColor: getColorByConfidence(fire.confidence),
+            color: 'black',
+            weight: 1,
+            opacity: 1,
+            fillOpacity: 0.8,
+          }).bindPopup(`
+            <strong>Data:</strong> ${fire.acq_date}<br>
+            <strong>Intensidade térmica:</strong> ${fire.bright_ti4} K<br>
+            <strong>Confiança:</strong> ${interpretConfidence(fire.confidence)}
+          `);
+          markersCluster.addLayer(marker);
+        });
+
+        window.firesLayer = markersCluster;
+        window.firesLayer.addTo(map);
+
+        if (data.length) {
+          const latlngs = data.map(fire => [fire.latitude, fire.longitude]);
+          const bounds = L.latLngBounds(latlngs);
+          map.fitBounds(bounds.pad(0.2));
+        } else {
+          centerMap();
+        }
+
+        updateLastUpdate();
+      } catch (error) {
+        console.error('Erro ao carregar focos de queimadas:', error);
+      } finally {
+        loading.style.display = 'none';
+      }
+    }
+
+    fetchFires();
+    // setInterval(fetchFires, 60000);  // 60 segundos de intervalo
+    setInterval(fetchFires, 300000); // 5 minutos de intervalo
+  </script>
+</body>
+
+</html>
